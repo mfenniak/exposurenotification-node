@@ -1,5 +1,4 @@
 const noble = require('@abandonware/noble');
-const Promise = require("bluebird");
 
 const covidAlertServiceUuid = 'FD6F';
 
