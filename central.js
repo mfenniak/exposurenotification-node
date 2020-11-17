@@ -45,7 +45,7 @@ function startCentral(logger) {
       newRpi = "NEW ";
     }
     const version = enPayloadData[16];
-    const txPower = enPayloadData[17];
+    const txPower = enPayloadData[17] << 24 >> 24; // convert unsigned node.js byte to a signed int value; assumes int32
 
     localLog.info(`${newRpi}advertisement v=${version.toString(2)}, txPower=${txPower}, rssi=${peripheral.rssi}, rpi=${rpi.toString('hex')}`);
     seenRpis.set(rpi, new Date());
