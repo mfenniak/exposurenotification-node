@@ -1,3 +1,6 @@
+/*
+// FIXME: maybe make a peripheral advertising my own service data?  But... not sure the testing purpose of this.
+
 const bleno = require('@abandonware/bleno');
 const util = require('util');
 // const Promise = require("bluebird");
@@ -84,3 +87,4 @@ EchoCharacteristic.prototype.onUnsubscribe = function() {
 };
 
 module.exports = { startPeripheral };
+*/

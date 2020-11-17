@@ -1,8 +1,7 @@
 const noble = require('@abandonware/noble');
 const Promise = require("bluebird");
 
-const abTraceTogetherServiceUuid = '70f34cb2888211eabc550242ac130003';
-const abTraceTogetherV2CharacteristicUuid = "7bee419e888211eabc550242ac130003";
+const covidAlertServiceUuid = 'FD6F';
 
 function startCentral(logger) {
   noble.on('warning', (msg) => {
@@ -13,48 +12,59 @@ function startCentral(logger) {
     logger.info('event stateChange', nobelState);
     if (nobelState === 'poweredOn') {
       logger.info('action startScanningAsync');
-      await noble.startScanningAsync([abTraceTogetherServiceUuid], false);
+      await noble.startScanningAsync([covidAlertServiceUuid], true); // true -> allow duplicates
     }
   });
+
+  const seenRpis = new Map();
     
   noble.on('discover', async (peripheral) => {
-    logger.info(`event discover peripheral.id ${peripheral.id}`);
-    startPeripheralManagement(logger.child({ peripheral: peripheral.id }), peripheral);
+    const localLog = logger.child({ peripheral: peripheral.id });
+    localLog.debug(`event discover peripheral, id=${peripheral.id}, address=${peripheral.address}, addressType=${peripheral.addressType}, connectable=${peripheral.connectable}, advertisement=${JSON.stringify(peripheral.advertisement)}`);
+    const serviceData = peripheral.advertisement ? peripheral.advertisement.serviceData : undefined;
+    if (!serviceData) {
+      localLog.error(`no service data for peripheral`);
+      return;
+    }
+    const enPayload = serviceData.find(sd => sd && sd.uuid.toLowerCase() == covidAlertServiceUuid.toLowerCase());
+    if (!enPayload) {
+      localLog.error(`no Exposure Notification service data for peripheral`);
+      return;
+    }
+
+    const enPayloadData = enPayload.data;
+    if (enPayloadData.length !== 20) {
+      localLog.error(`unexpected enPayloadData length; ${enPayloadData.length}`);
+      return;
+    }
+
+    // 16 bytes of rolling proximity identifier
+    // 4 bytes of associated encrypted metadata; 1 byte version, 1 byte transmit power level, two bytes reserved
+    const rpi = enPayloadData.slice(0, 16).toString('hex');
+    let newRpi = "";
+    if (!seenRpis.has(rpi)) {
+      newRpi = "NEW ";
+    }
+    const version = enPayloadData[16];
+    const txPower = enPayloadData[17];
+
+    localLog.info(`${newRpi}advertisement v=${version.toString(2)}, txPower=${txPower}, rssi=${peripheral.rssi}, rpi=${rpi.toString('hex')}`);
+    seenRpis.set(rpi, new Date());
   });
-}
 
-async function startPeripheralManagement(logger, peripheral) {
-  logger.info(`connecting to peripheral ${peripheral.address}`);
-  await peripheral.connectAsync();
-  logger.info(`connect successful to peripheral ${peripheral.address}`);
-
-  while (true) {
-    const { services, characteristics } = await peripheral.discoverAllServicesAndCharacteristicsAsync();
-    let foundCharacteristic = false;
-    for (const characteristic of characteristics) {
-      if (characteristic.uuid !== abTraceTogetherV2CharacteristicUuid) {
-        continue;
+  function timedLogging() {
+    let count = 0, countRecent = 0;
+    const recent = new Date().getTime() - (15 * 60 * 1000);
+    for (const [rpi, date] of seenRpis) {
+      count += 1;
+      if (date.getTime() > recent) {
+        countRecent += 1;
       }
-
-      const traceDataBuffer = await characteristic.readAsync();
-      if (traceDataBuffer.length === 0) {
-        logger.info(`characteristic returned no data`);
-      } else {
-        const traceData = JSON.parse(traceDataBuffer.toString("utf-8"));
-        // traceData: {id: string, mp: string (Android|iPhone), o: string (CA_AB), v: int (2)}
-        logger.info(`peripheral type ${traceData.mp} has id ${traceData.id.substr(0,30)}`);
-      }
-
-      foundCharacteristic = true;
-      break;
     }
-
-    if (!foundCharacteristic) {
-      logger.info(`peripheral didn't have the trace characteristic`);
-    }
-
-    await Promise.delay(30000);
+    logger.info(`have seen ${count} unique RPIs, ${countRecent} in the past 15 minutes`);
+    setTimeout(timedLogging, 30000);
   }
+  timedLogging();
 }
 
 module.exports = { startCentral };
