@@ -1,4 +1,4 @@
-# exposurenotification-node
+# exposurenotification-nodejs
 
 This is a node.js console application that reads data from nearby devices participating in the Apple/Google Exposure Notification Bluetooth protocol.
 
